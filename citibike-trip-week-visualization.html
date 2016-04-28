@@ -1,0 +1,110 @@
+<!--
+    This file is a copy of the shelved CitiBike visualization that I was building for the purposes of my website, and
+     so it is formatted for drawing resources from said website. I don't feel I have a sufficient grasp of the
+     underlying technologies to finish this project, for the moment, so it's scrapped/on hold.
+
+     To get this working locally change:
+     >>> d3.json("../static/json/one_trip.geojson", function(error, collection) {
+
+     To:
+     >>> d3.json("one_trip.geojson", function(error, collection) {
+
+     Here are some technical references:
+     >>> http://chriswhong.com/open-data/taxi-techblog-2-leaflet-d3-and-other-frontend-fun/
+     >>> http://chriswhong.com/data-visualization/taxitechblog1/
+     >>> https://bost.ocks.org/mike/leaflet/
+     >>> http://zevross.com/blog/2014/09/30/use-the-amazing-d3-library-to-animate-a-path-on-a-leaflet-map/
+     >>> http://bl.ocks.org/zross/6a31f4ef9e778d94c204
+
+-->
+
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<style>
+    #map {
+        width:960px;
+        height:500px;
+    }
+    #visualize-button {
+        font-weight:bold;
+        border:1px solid gray;
+        background:#F0FFFF;
+        border-radius:5px;
+        font-size:30px;
+        padding:10px;
+        padding-left:20px;
+        padding-right:20px;
+        box-shadow: 2px 2px 2px 2px rgba(0, 0, 0, 0.2);
+        position:absolute;
+        top:230px;
+        left:430px;
+    }
+</style>
+
+<link rel="stylesheet" href="https://rawgit.com/andrewgiessel/leafletstuff/master/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.3/leaflet.js"></script>
+<script src='https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/Leaflet.fullscreen.min.js'></script>
+<link href='https://api.mapbox.com/mapbox.js/plugins/leaflet-fullscreen/v1.0.1/leaflet.fullscreen.css' rel='stylesheet' />
+<script src="https://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+
+<div id="map"></div>
+<button id="visualize-button" onclick="visualize()">►&nbsp;&nbsp;Play</button>
+
+<script>
+    var map = L.map('map', {zoomControl: false}).setView([40.71, -74], 13);
+
+    map.dragging.disable();
+    map.touchZoom.disable();
+    map.doubleClickZoom.disable();
+    map.scrollWheelZoom.disable();
+
+    var Hydda_Base = L.tileLayer('http://{s}.tile.openstreetmap.se/hydda/base/{z}/{x}/{y}.png', {
+        attribution: 'Tiles courtesy of <a href="http://openstreetmap.se/" target="_blank">OpenStreetMap Sweden</a> &mdash; Map data &copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    var svg = d3.select(map.getPanes().overlayPane).append("svg");
+    var g = svg.append("g").attr("class", "leaflet-zoom-hide");
+
+    function visualize() {
+        map.toggleFullscreen(); // Toogle fullscreen method from leaflet.fullscreen.js.
+        d3.json("../static/json/one_trip.geojson", function(error, collection) {
+            if (error) throw error;
+
+            console.log(collection);
+
+            var transform = d3.geo.transform({point: projectPoint});
+            var path = d3.geo.path().projection(transform);
+            var feature = g.selectAll("path")
+                .data(collection.features)
+                .enter().append("path");
+
+            // Use Leaflet to implement a D3 geometric transformation.
+            function projectPoint(x, y) {
+                var point = map.latLngToLayerPoint(new L.LatLng(y, x));
+                this.stream.point(point.x, point.y);
+            }
+
+            map.on("viewreset", reset);
+            reset();
+
+            // Reposition the SVG to cover the features.
+            function reset() {
+                var bounds = path.bounds(collection),
+                topLeft = bounds[0],
+                bottomRight = bounds[1];
+
+                svg.attr("width", bottomRight[0] - topLeft[0])
+                    .attr("height", bottomRight[1] - topLeft[1])
+                    .style("left", topLeft[0] + "px")
+                    .style("top", topLeft[1] + "px");
+
+                g.attr("transform", "translate(" + -topLeft[0] + "," + -topLeft[1] + ")");
+
+                feature.attr("d", path);
+            }
+
+        });
+    }
+
+</script>

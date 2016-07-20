@@ -298,23 +298,23 @@ class RebalancingTrip:
         # Return
         return coords, time_estimate_mins
 
-    # @staticmethod
-    # def rebalanced(delta_df):
-    #     """
-    #     Parameters
-    #     ----------
-    #     delta_df: pd.DataFrame
-    #         Two bike trips.
-    #
-    #     Returns
-    #     -------
-    #     Returns True if the bike was rebalanced in between the trips, False otherwise.
-    #     """
-    #     ind_1, ind_2 = delta_df.index.values
-    #     if delta_df.ix[ind_1, 'end station id'] == delta_df.ix[ind_2, 'start station id']:
-    #         return False
-    #     else:
-    #         return True
+    @staticmethod
+    def rebalanced(delta_df):
+        """
+        Parameters
+        ----------
+        delta_df: pd.DataFrame
+            Two bike trips.
+
+        Returns
+        -------
+        Returns True if the bike was rebalanced in between the trips, False otherwise.
+        """
+        ind_1, ind_2 = delta_df.index.values
+        if delta_df.ix[ind_1, 'end station id'] == delta_df.ix[ind_2, 'start station id']:
+            return False
+        else:
+            return True
 
 
 ######################################

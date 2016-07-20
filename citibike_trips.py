@@ -1,9 +1,3 @@
-"""
-Mock module (for now) of the master driver for this project's backend.
-
-RAW AND UN-TESTED.
-"""
-
 import requests
 import zipfile
 import os
@@ -14,7 +8,10 @@ import json
 import numpy as np
 import geojson
 from polyline.codec import PolylineCodec
-from datetime import datetime
+from datetime import datetime, timedelta
+from pymongo import MongoClient
+import random
+
 
 #####################
 # Google API Client #
@@ -129,6 +126,7 @@ def select_random_bike_week_from_2015_containing_n_plus_trips(n=25):
                                get_raw_trip_data(year=2015, month=end_month)])
     # Both a lambda function using strptime and the pandas to_datetime method are unacceptably slow for converting
     # the dates to a usable comparative format.
+    print("Converting strings to datetimes. This is a very slow operation, unfortunately!")
     trip_data['starttime'] = pd.to_datetime(trip_data['starttime'], infer_datetime_format=True)
     trip_data['stoptime'] = pd.to_datetime(trip_data['stoptime'], infer_datetime_format=True)
     # Extract that week from the monthly data.
@@ -186,7 +184,6 @@ class BikeTrip:
 
 
 class RebalancingTrip:
-    # TODO: Write tests for the RebalancingTrip class.
     """
     Class encoding a single re-balancing trip. Wrapper of a GeoJSON FeatureCollection.
     """
@@ -217,6 +214,11 @@ class RebalancingTrip:
         -------
         The list of pd.DataFrame objects corresponding with the aforementioned rebalancing trip deltas.
         """
+        # delta_df['starttime'] = delta_df['starttime'].astype(datetime)
+        # delta_df['stoptime'] = delta_df['stoptime'].astype(datetime)
+        # f = lambda x: datetime.strptime(x, "%Y-%d-%m %H:%M:%S")
+        # delta_df['starttime'] = delta_df['starttime'].map(f)
+        # delta_df['stoptime'] = delta_df['stoptime'].map(f)
         start_point = delta_df.iloc[0]
         end_point = delta_df.iloc[1]
         start_lat, start_long = start_point[["end station latitude", "end station longitude"]]
@@ -224,8 +226,8 @@ class RebalancingTrip:
         coords, time_estimate_mins = self.get_rebalancing_trip_path_time_estimate_tuple([40.76727216, -73.99392888],
                                                                                    [40.701907, -74.013942], client)
         midpoint_time = end_point['starttime'] + ((end_point['starttime'] - start_point['stoptime']) / 2)
-        rebalancing_start_time = midpoint_time - datetime.timedelta(minutes=time_estimate_mins / 2)
-        rebalancing_end_time = midpoint_time + datetime.timedelta(minutes=time_estimate_mins / 2)
+        rebalancing_start_time = midpoint_time - timedelta(minutes=time_estimate_mins / 2)
+        rebalancing_end_time = midpoint_time + timedelta(minutes=time_estimate_mins / 2)
         if rebalancing_start_time < start_point['stoptime']:
             rebalancing_start_time = start_point['stoptime']
         if rebalancing_end_time > end_point['starttime']:
@@ -317,85 +319,87 @@ class RebalancingTrip:
             return True
 
 
-######################################
-# CODE BEING REFACTORED INTO CLASSES #
-######################################
+class DataStore:
+    """
+    Class encoding the data storage layer.
+    """
 
-#
-# Doesn't appear necessary at all?
-#
+    def __init__(self, credentials_file="mlab_instance_api_key.json"):
+        """
+        Initializes a connection to an mLab MongoDB client.
+        """
+        with open(credentials_file) as cred:
+            uri = json.load(cred)['uri']
+        self.client = MongoClient(uri)
+        self.bikeweeks = self.client['citibike']['bike-weeks']
 
-# def get_list_of_rebalancing_frames_from_bike_week(bike_week):
-#     """
-#     The raw trip data that CitiBike provides is missing something very important---data on re-balancing trips. We
-#     have to extrapolate these ourselves. This is not a simple ufunc either, requiring instead a pairwise analysis of
-#     the starting and ending points of adjacent bike trips in the dataset.
-#
-#     This method implements those comparisons, returning a list of trip pairs, called deltas elsewhere, which have
-#     mismatched starting and ending points---indicating that the bike was moved not under its own power in between.
-#
-#     Parameters
-#     ----------
-#     bike_week: pd.DataFrame
-#         A pandas DataFrame containing the adjacent trip data of a single bike. This needn't necessarily be a
-#         bike-week, specifically, but when this script is run it is.
-#
-#     Returns
-#     -------
-#     The list of pd.DataFrame objects corresponding with the aforementioned rebalancing trip deltas.
-#     """
-#     frames = []
-#     for a_minus_1, a in zip(range(len(bike_week) - 1), range(1, len(bike_week))):
-#         delta = bike_week.iloc[[a_minus_1, a]]
-#         ind_1, ind_2 = delta.index.values
-#         if delta.ix[ind_1, 'end station id'] == delta.ix[ind_2, 'start station id']:
-#             continue
-#         else:
-#             frames.append(delta)
-#     return frames
+    def insert(self, bikeweek):
+        """
+        Insert a single bikeweek into the database. Returns an inspectable result object, with e.g. `acknowledged` and
+        `inserted_id` fields.
+        """
+        return self.bikeweeks.insert_one(bikeweek)
+
+    def delete_all(self):
+        """
+        Clears the entire database. Only useful for testing. Don't do this actually.
+        """
+        self.bikeweeks.delete_many({})
+
+    def delete(self, document_id):
+        """
+        Deletes a single entry, by document id (as returned by e.g. `result.inserted_id`). only useful for testing.
+        """
+        return self.bikeweeks.delete_one({'_id': document_id})
+
+    def sample(self):
+        """
+        Returns a single random bikeweek from storage.
+        """
+        r = random.randint(0, self.bikeweeks.count({}) - 1)
+        return self.bikeweeks.find({}).limit(1).skip(r)
 
 ######################################
 # CODE BEING REFACTORED INTO RUNTIME #
 ######################################
 
-
-def main():
-    """
-    The method that actual implements the whole fruckus above.
-
-    Parameters
-    ----------
-    delta_df: pd.DataFrame
-        A pandas DataFrame containing a delta DataFrame (two adjacent bike trips with different start and end points).
-    client: googlemaps.Client
-        A `googlemaps.Client` instance, as returned by e.g. `import_google_credentials()`.
-
-
-    Returns
-    -------
-    The list of pd.DataFrame objects corresponding with the aforementioned rebalancing trip deltas.
-    """
-    client = import_google_credentials()
-    feature_list = []
-    bike_df = df[df['bikeid'] == bike_id].sort_values(by='starttime')
-    for a_minus_1, a in zip(range(len(bike_df) - 1), range(1, len(bike_df))):
-        delta_df = bike_df.iloc[[a_minus_1, a]]
-        ind_1, ind_2 = delta_df.index.values
-        start = delta_df.ix[ind_1]
-        end = delta_df.ix[ind_2]
-        path = get_bike_trip_path([start['start station latitude'], start['start station longitude']],
-                                  [start['end station latitude'], start['end station longitude']],
-                                  client)
-        props = start.to_dict()
-        props['starttime'] = props['starttime'].strftime("%Y-%d-%m %H:%M:%S")
-        props['stoptime'] = props['stoptime'].strftime("%Y-%d-%m %H:%M:%S")
-        feature_list.append(geojson.Feature(geometry=geojson.LineString(path, properties=props)))
-        if rebalanced(delta_df):
-            feature_list.append(get_rebalancing_geojson_repr(delta_df, client))
-    return geojson.FeatureCollection(feature_list, properties={'bike_id': bike_id})
-
-# TODO: Write database storage code.
-# TODO: Write main execution method.
-
-if __name__ == "__main__":
-    main()
+# def main():
+#     """
+#     The method that actual implements the whole fruckus above.
+#
+#     Parameters
+#     ----------
+#     delta_df: pd.DataFrame
+#         A pandas DataFrame containing a delta DataFrame (two adjacent bike trips with different start and end points).
+#     client: googlemaps.Client
+#         A `googlemaps.Client` instance, as returned by e.g. `import_google_credentials()`.
+#
+#
+#     Returns
+#     -------
+#     The list of pd.DataFrame objects corresponding with the aforementioned rebalancing trip deltas.
+#     """
+#     client = import_google_credentials()
+#     feature_list = []
+#     bike_df = df[df['bikeid'] == bike_id].sort_values(by='starttime')
+#     for a_minus_1, a in zip(range(len(bike_df) - 1), range(1, len(bike_df))):
+#         delta_df = bike_df.iloc[[a_minus_1, a]]
+#         ind_1, ind_2 = delta_df.index.values
+#         start = delta_df.ix[ind_1]
+#         end = delta_df.ix[ind_2]
+#         path = get_bike_trip_path([start['start station latitude'], start['start station longitude']],
+#                                   [start['end station latitude'], start['end station longitude']],
+#                                   client)
+#         props = start.to_dict()
+#         props['starttime'] = props['starttime'].strftime("%Y-%d-%m %H:%M:%S")
+#         props['stoptime'] = props['stoptime'].strftime("%Y-%d-%m %H:%M:%S")
+#         feature_list.append(geojson.Feature(geometry=geojson.LineString(path, properties=props)))
+#         if rebalanced(delta_df):
+#             feature_list.append(get_rebalancing_geojson_repr(delta_df, client))
+#     return geojson.FeatureCollection(feature_list, properties={'bike_id': bike_id})
+#
+# # TODO: Write database storage code.
+# # TODO: Write main execution method.
+#
+# if __name__ == "__main__":
+#     main()

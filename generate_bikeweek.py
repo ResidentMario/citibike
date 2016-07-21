@@ -1,3 +1,6 @@
+"""
+Generates a single sample bike-week and stores it in the database.
+"""
 from citibike_trips import (initialize_google_client,
                             select_random_bike_week_from_2015_containing_n_plus_trips, BikeTrip, RebalancingTrip,
                             DataStore)

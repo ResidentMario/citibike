@@ -126,7 +126,7 @@ def select_random_bike_week_from_2015_containing_n_plus_trips(n=25):
                                get_raw_trip_data(year=2015, month=end_month)])
     # Both a lambda function using strptime and the pandas to_datetime method are unacceptably slow for converting
     # the dates to a usable comparative format.
-    print("Converting strings to datetimes. This is a very slow operation, unfortunately!")
+    print("Converting strings to datetimes...")
     trip_data['starttime'] = pd.to_datetime(trip_data['starttime'], infer_datetime_format=True)
     trip_data['stoptime'] = pd.to_datetime(trip_data['stoptime'], infer_datetime_format=True)
     # Extract that week from the monthly data.
@@ -158,7 +158,7 @@ class BikeTrip:
                   'end station id', 'end station longitude', 'end station latitude',
                   'start station id', 'start station longitude', 'start station latitude',
                   'tripduration']:
-            props[p] = int(props[p]) if props[p] else 0
+            props[p] = int(props[p]) if pd.notnull(props[p]) else 0
         for p in ['starttime', 'stoptime']:
             props[p] = props[p].strftime("%Y-%d-%m %H:%M:%S")
         self.data = geojson.Feature(geometry=geojson.LineString(path, properties=props))
@@ -363,54 +363,15 @@ class DataStore:
         """
         return self.bikeweeks.delete_one({'_id': document_id})
 
+    def select_all(self):
+        """
+        Returns all documents in the data store.
+        """
+        return self.bikeweeks.find({})
+
     def sample(self):
         """
         Returns a single random bikeweek from storage.
         """
         r = random.randint(0, self.bikeweeks.count({}) - 1)
         return self.bikeweeks.find({}).limit(1).skip(r)
-
-######################################
-# CODE BEING REFACTORED INTO RUNTIME #
-######################################
-
-# def main():
-#     """
-#     The method that actual implements the whole fruckus above.
-#
-#     Parameters
-#     ----------
-#     delta_df: pd.DataFrame
-#         A pandas DataFrame containing a delta DataFrame (two adjacent bike trips with different start and end points).
-#     client: googlemaps.Client
-#         A `googlemaps.Client` instance, as returned by e.g. `import_google_credentials()`.
-#
-#
-#     Returns
-#     -------
-#     The list of pd.DataFrame objects corresponding with the aforementioned rebalancing trip deltas.
-#     """
-#     client = import_google_credentials()
-#     feature_list = []
-#     bike_df = df[df['bikeid'] == bike_id].sort_values(by='starttime')
-#     for a_minus_1, a in zip(range(len(bike_df) - 1), range(1, len(bike_df))):
-#         delta_df = bike_df.iloc[[a_minus_1, a]]
-#         ind_1, ind_2 = delta_df.index.values
-#         start = delta_df.ix[ind_1]
-#         end = delta_df.ix[ind_2]
-#         path = get_bike_trip_path([start['start station latitude'], start['start station longitude']],
-#                                   [start['end station latitude'], start['end station longitude']],
-#                                   client)
-#         props = start.to_dict()
-#         props['starttime'] = props['starttime'].strftime("%Y-%d-%m %H:%M:%S")
-#         props['stoptime'] = props['stoptime'].strftime("%Y-%d-%m %H:%M:%S")
-#         feature_list.append(geojson.Feature(geometry=geojson.LineString(path, properties=props)))
-#         if rebalanced(delta_df):
-#             feature_list.append(get_rebalancing_geojson_repr(delta_df, client))
-#     return geojson.FeatureCollection(feature_list, properties={'bike_id': bike_id})
-#
-# # TODO: Write database storage code.
-# # TODO: Write main execution method.
-#
-# if __name__ == "__main__":
-#     main()

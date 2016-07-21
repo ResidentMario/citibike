@@ -151,6 +151,16 @@ class BikeTrip:
                                        [raw_trip['end station latitude'],
                                         raw_trip['end station longitude']], gmaps)
         props = raw_trip.to_dict()
+        # Because mongodb does not understand numpy data types, in order for this class to be compatible with our
+        # data store we have to cast all of the object stored as numpy types back into base Python types. This has to
+        #  be done manually.
+        for p in ['bikeid', 'birth year', 'gender',
+                  'end station id', 'end station longitude', 'end station latitude',
+                  'start station id', 'start station longitude', 'start station latitude',
+                  'tripduration']:
+            props[p] = int(props[p]) if props[p] else 0
+        for p in ['starttime', 'stoptime']:
+            props[p] = props[p].strftime("%Y-%d-%m %H:%M:%S")
         self.data = geojson.Feature(geometry=geojson.LineString(path, properties=props))
 
     @staticmethod
@@ -232,20 +242,21 @@ class RebalancingTrip:
             rebalancing_start_time = start_point['stoptime']
         if rebalancing_end_time > end_point['starttime']:
             rebalancing_end_time = end_point['starttime']
+        # Explicit casts are due to mongodb limitations, see BikeTrip above.
         attributes = {
-            "tripduration": time_estimate_mins * 60,
-            "start station id": start_point['end station id'],
-            "end station id": end_point['start station id'],
+            "tripduration": int(time_estimate_mins * 60),
+            "start station id": int(start_point['end station id']),
+            "end station id": int(end_point['start station id']),
             "start station name": start_point['end station name'],
             "end station name": end_point['start station name'],
-            "bikeid": start_point["bikeid"],
+            "bikeid": int(start_point["bikeid"]),
             "usertype": "Rebalancing",
-            "birth year": 0.0,
-            "gender": 3.0,
-            "start station latitude": start_lat,
-            "start station longitude": start_long,
-            "end station latitude": end_lat,
-            "end station longitude": end_long,
+            "birth year": 0,
+            "gender": 3,
+            "start station latitude": int(start_lat),
+            "start station longitude": int(start_long),
+            "end station latitude": int(end_lat),
+            "end station longitude": int(end_long),
             "starttime": rebalancing_start_time.strftime("%Y-%d-%m %H:%M:%S"),
             "stoptime": rebalancing_end_time.strftime("%Y-%d-%m %H:%M:%S")
         }

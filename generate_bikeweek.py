@@ -39,7 +39,7 @@ def main():
             rebalancing_trip = RebalancingTrip(delta_df, client).data
             feature_list.append(rebalancing_trip)
     print("Saving to database...")
-    bikeweek = geojson.FeatureCollection(feature_list, properties={'bike_id': str(df.head(1)['bikeid'].values[0])})
+    bikeweek = geojson.FeatureCollection(feature_list, properties={'bike_id': int(df.head(1)['bikeid'].values[0])})
     db.insert(bikeweek)
     print("Done!")
 

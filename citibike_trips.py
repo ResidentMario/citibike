@@ -332,7 +332,8 @@ class RebalancingTrip:
 
 class DataStore:
     """
-    Class encoding the data storage layer.
+    Class encoding the Citibike data storage layer. This file is a direct copy of the one in the `citibike` project
+    repository.
     """
 
     def __init__(self, credentials_file="mlab_instance_api_key.json"):
@@ -374,4 +375,8 @@ class DataStore:
         Returns a single random bikeweek from storage.
         """
         r = random.randint(0, self.bikeweeks.count({}) - 1)
-        return self.bikeweeks.find({}).limit(1).skip(r)
+        sample = self.bikeweeks.find({}).limit(1).skip(r).next()
+        # _id is a BSON parameter which can technically be extended, but since I don't need the object anyway I can
+        # safely delete it.
+        del sample['_id']
+        return sample

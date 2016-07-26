@@ -1,3 +1,7 @@
+"""
+Unittest module.
+"""
+
 import unittest
 import citibike_trips
 import pandas as pd
@@ -43,11 +47,9 @@ class BikeTest(unittest.TestCase):
         })
 
     def testInitialization(self):
-        # TODO: Mock the API call (see above).
         citibike_trips.BikeTrip(self.test_srs)
 
     def testCoords(self):
-        # TODO: Mock the API call.
         coord_list = citibike_trips.BikeTrip.get_bike_trip_path([40.76727216,-73.99392888], [40.701907,-74.013942],
                                                                  self.client)
         self.assertTrue(len(coord_list) > 0)
@@ -65,7 +67,6 @@ class RebalancingTest(unittest.TestCase):
         self.test_non_rebalanced_delta = pd.read_csv("non_rebalanced_sample.csv")
 
     def testCoords(self):
-        # TODO: Mock the API call.get_rebalancing_trip_path_time_estimate_tuple([40.76727216,-73.99392888], [40.701907,-74.013942], gmaps)
         coord_list, time_estimate = citibike_trips.RebalancingTrip.get_rebalancing_trip_path_time_estimate_tuple(
             [40.76727216, -73.99392888], [40.701907,-74.013942], self.client
         )

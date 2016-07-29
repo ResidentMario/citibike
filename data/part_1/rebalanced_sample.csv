@@ -1,0 +1,3 @@
+Index,tripduration,starttime,stoptime,start station id,start station name,start station latitude,start station longitude,end station id,end station name,end station latitude,end station longitude,bikeid,usertype,birth year,gender
+31169,327.0,2016-10-03 09:37:23,2016-10-03 09:42:51,151.0,Cleveland Pl & Spring St,40.72210378668603,-73.99724900722505,293.0,Lafayette St & E 8 St,40.73028666,-73.9907647,23428.0,Subscriber,1987.0,1.0
+57709,238.0,2016-09-03 17:01:34,2016-09-03 17:05:33,173.0,Broadway & W 49 St,40.76068327096592,-73.98452728986742,480.0,W 53 St & 10 Ave,40.76669671,-73.99061728,23428.0,Subscriber,1991.0,1.0

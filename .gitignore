@@ -1,6 +1,6 @@
 .ipynb_checkpoints/
-google_maps_api_key.json
-mlab_instance_api_key.json
+credentials/google_maps_api_key.json
+credentials/mlab_instance_api_key.json
 .DS_Store
 .idea/
 *.txt

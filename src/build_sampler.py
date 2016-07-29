@@ -2,7 +2,7 @@
 Builds a sampler of complete bike-week paths based on the list of bike-weeks stored in the data store.
 """
 
-from citibike_trips import DataStore
+from src.citibike_trips import DataStore
 
 
 db = DataStore()

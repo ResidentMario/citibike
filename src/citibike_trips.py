@@ -42,14 +42,13 @@ def initialize_google_client(filename='google_maps_api_key.json'):
     -------
     A googlemaps.Client with credentials initialized and ready for action.
     """
-    if filename in [f for f in os.listdir('.') if os.path.isfile(f)]:
-        data = json.load(open(filename))['key']
+    if os.path.isfile(filename):
+        with open(filename) as f:
+            data = json.load(f)['key']
         return googlemaps.Client(key=data)
     else:
-        raise IOError('This API requires a Google Maps credentials token to work. Did you forget to define one?')
-
-
-gmaps = initialize_google_client()
+        raise IOError(
+            'This API requires a Google Maps credentials token to work. Did you forget to define one?')
 
 
 #########################
@@ -111,12 +110,6 @@ def select_random_bike_week_from_2015_containing_n_plus_trips(n=25):
                             step=np.timedelta64(1, 'W'))
     start = np.random.choice(date_ranges)
     end = start + np.timedelta64(1, 'W')
-    # Get the data for that week.
-    # The following is too slow:
-    # trip_data['starttime'] = trip_data['starttime'].map(
-    #     lambda x: np.datetime64(datetime.strptime(x, "%m/%d/%Y %H:%M:%S")))
-    # trip_data['stoptime'] = trip_data['stoptime'].map(
-    #     lambda x: np.datetime64(datetime.strptime(x, "%m/%d/%Y %H:%M:%S")))
     start_month = start.astype(datetime).month
     end_month = end.astype(datetime).month
     if start_month == end_month:
@@ -124,11 +117,12 @@ def select_random_bike_week_from_2015_containing_n_plus_trips(n=25):
     else:
         trip_data = pd.concat([get_raw_trip_data(year=2015, month=start_month),
                                get_raw_trip_data(year=2015, month=end_month)])
-    # Both a lambda function using strptime and the pandas to_datetime method are unacceptably slow for converting
-    # the dates to a usable comparative format.
-    print("Converting strings to datetimes...")
-    trip_data['starttime'] = pd.to_datetime(trip_data['starttime'], infer_datetime_format=True)
-    trip_data['stoptime'] = pd.to_datetime(trip_data['stoptime'], infer_datetime_format=True)
+    # This conversion is very slow.
+    # print("Converting strings to datetimes...")
+    if isinstance(trip_data['starttime'][0], str):
+        trip_data['starttime'] = pd.to_datetime(trip_data['starttime'], infer_datetime_format=True)
+    if isinstance(trip_data['stoptime'][0], str):
+        trip_data['stoptime'] = pd.to_datetime(trip_data['stoptime'], infer_datetime_format=True)
     # Extract that week from the monthly data.
     selected_week = trip_data[(trip_data['starttime'] > start) & (trip_data['stoptime'] < end)]
     # Pick a bike with more than 25 trips and return it.
@@ -142,14 +136,14 @@ class BikeTrip:
     """
     Class encoding a single bike trip. Wrapper of a GeoJSON FeatureCollection.
     """
-    def __init__(self, raw_trip):
+    def __init__(self, raw_trip, client):
         """
         :param raw_trip: A pandas Series, taken the from the raw CitiBike data, of a bike trip.
         """
         path = self.get_bike_trip_path([raw_trip['start station latitude'],
                                         raw_trip['start station longitude']],
                                        [raw_trip['end station latitude'],
-                                        raw_trip['end station longitude']], gmaps)
+                                        raw_trip['end station longitude']], client)
         props = raw_trip.to_dict()
         # Because mongodb does not understand numpy data types, in order for this class to be compatible with our
         # data store we have to cast all of the object stored as numpy types back into base Python types. This has to
@@ -160,7 +154,8 @@ class BikeTrip:
                   'tripduration']:
             props[p] = int(props[p]) if pd.notnull(props[p]) else 0
         for p in ['starttime', 'stoptime']:
-            props[p] = props[p].strftime("%Y-%d-%m %H:%M:%S")
+            if isinstance(props[p], str):
+                props[p] = props[p].strftime("%Y-%d-%m %H:%M:%S")
         self.data = geojson.Feature(geometry=geojson.LineString(path, properties=props))
 
     @staticmethod
@@ -231,6 +226,10 @@ class RebalancingTrip:
         # delta_df['stoptime'] = delta_df['stoptime'].map(f)
         start_point = delta_df.iloc[0]
         end_point = delta_df.iloc[1]
+        for point in [start_point, end_point]:
+            for time in ['starttime', 'stoptime']:
+                if isinstance(point[time], str):
+                    point[time] = pd.to_datetime(point[time], infer_datetime_format=True)
         start_lat, start_long = start_point[["end station latitude", "end station longitude"]]
         end_lat, end_long = end_point[["start station latitude", "start station longitude"]]
         coords, time_estimate_mins = self.get_rebalancing_trip_path_time_estimate_tuple([40.76727216, -73.99392888],
@@ -336,7 +335,7 @@ class DataStore:
     repository.
     """
 
-    def __init__(self, credentials_file="mlab_instance_api_key.json"):
+    def __init__(self, credentials_file="../credentials/mlab_instance_api_key.json"):
         """
         Initializes a connection to an mLab MongoDB client.
         """

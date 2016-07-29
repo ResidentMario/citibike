@@ -1,6 +1,7 @@
 .ipynb_checkpoints/
 credentials/google_maps_api_key.json
 credentials/mlab_instance_api_key.json
+credentials/mlab_dummy_instance_api_key.json
 .DS_Store
 .idea/
 *.txt

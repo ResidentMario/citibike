@@ -195,45 +195,52 @@ class RebalancingTrip:
 
     def __init__(self, delta_df, client):
         """
-        Given a "delta DataFrame"---that is, one corresponding with a pair of trips with different starting and ending
-        points, as checked for and/or returned by `rebalanced()` and `get_list_of_rebalancing_frames_from_bike_week()`
-        ---returns a fully packaged GeoJSON representation
+        This class initializer takes one of two different kinds of inputs in df, plus a valid Google maps client as
+        the client paramater.
 
-        There are a lot of intermediate steps to this process. The GeoJSON representation must be built from scratch.
-        Start time and stop time are computed to be exactly in the middle of the two surrounding trips.
+        The first kind of input---the one written for the purposes of generating bike-weeks in the original revision
+        of this codebase---is what I call a delta DataFrame. This is DataFrame containing two Series corresponding
+        with two adjacent trips in which the end point of the first trip does not match the start point of the
+        second, implying that a rebalancing trip was made in between the two points.
 
-        This method implements `get_rebalancing_trip_path_time_estimate_tuple()` and `rebalanced()`.
+        The second kind of input---generated later---is a single Series corresponding with a single precalculated
+        rebalancing trip. That is, the expected input in this case is a Series with all of the expected parameters
+        of the core dataset pre-filled.
+
+        Generating the data I need using the second mode requires significant preprocessing efforts but simplifies
+        the codebase overall because it allows to know, when writing the data to the data store, how many more trips
+        I need to run through the geocoder.
+
+        Pre-filling requires running get_rebalancing_trip_path_time_estimate_tuple() head of time; for more details see
+        notebook 06.
+
+        Either way this class initializer assigns to the object a fully packaged GeoJSON representation. There are a
+        lot of intermediate steps to this process. The GeoJSON representation must be built from scratch. Start time
+        and stop time are computed to be exactly in the middle of the two surrounding trips.
 
         Compare with the far simpler `bike_tripper()`, which does the same thing for the it-turns-out far simpler case of
         actual bike trips.
 
         Parameters
         ----------
-        delta_df: pd.DataFrame
-            A pandas DataFrame containing a delta DataFrame (two adjacent bike trips with different start and end points).
+        delta_df: pd.DataFrame or pd.Series
+            A pandas DataFrame containing a delta DataFrame (two adjacent bike trips with different start and end
+            points). Alternatively, a single pandas Series containing the preprocessed trip.
         client: googlemaps.Client
             A `googlemaps.Client` instance, as returned by e.g. `import_google_credentials()`.
-
-
-        Returns
-        -------
-        The list of pd.DataFrame objects corresponding with the aforementioned rebalancing trip deltas. Note that if
-        this method finds that the given tripdelta's start and stop stations match, then self.data is initialized to
-        None, e.g. no processing is done.
         """
-        start_point = delta_df.iloc[0]
-        end_point = delta_df.iloc[1]
-        if start_point['end station id'] == end_point['start station id']:
-            self.data = None
-        else:
+        if isinstance(delta_df, pd.DataFrame):
+            # First initialization type.
+            start_point = delta_df.iloc[0]
+            end_point = delta_df.iloc[1]
             for point in [start_point, end_point]:
                 for time in ['starttime', 'stoptime']:
                     if isinstance(point[time], str):
                         point[time] = pd.to_datetime(point[time], infer_datetime_format=True)
             start_lat, start_long = start_point[["end station latitude", "end station longitude"]]
             end_lat, end_long = end_point[["start station latitude", "start station longitude"]]
-            coords, time_estimate_mins = self.get_rebalancing_trip_path_time_estimate_tuple([40.76727216, -73.99392888],
-                                                                                       [40.701907, -74.013942], client)
+            coords, time_estimate_mins = self.get_rebalancing_trip_path_time_estimate_tuple([start_lat, start_long],
+                                                                                            [end_lat, end_long], client)
             midpoint_time = end_point['starttime'] + ((end_point['starttime'] - start_point['stoptime']) / 2)
             rebalancing_start_time = midpoint_time - timedelta(minutes=time_estimate_mins / 2)
             rebalancing_end_time = midpoint_time + timedelta(minutes=time_estimate_mins / 2)
@@ -260,6 +267,13 @@ class RebalancingTrip:
                 "stoptime": rebalancing_end_time.strftime("%Y-%d-%m %H:%M:%S"),
             }
             self.data = geojson.Feature(geometry=geojson.LineString(coords, properties=attributes))
+        elif isinstance(delta_df, pd.Series):
+            # Second initialization type.
+            coords, _ = self.get_rebalancing_trip_path_time_estimate_tuple([delta_df["start station latitude"],
+                                                                            delta_df["start station longitude"]],
+                                                                           [delta_df["end station latitude"],
+                                                                            delta_df["end station longitude"]], client)
+            self.data = geojson.Feature(geometry=geojson.LineString(coords, properties=delta_df.to_dict()))
 
     @staticmethod
     def get_rebalancing_trip_path_time_estimate_tuple(start, end, client):
@@ -331,23 +345,37 @@ class RebalancingTrip:
 
 class DataStore:
     """
-    Class encoding the Citibike data storage layer. This file is a direct copy of the one in the `citibike` project
-    repository.
+    Class encoding the Citibike data storage layer.
+
+    Note: this class been refactored from the first draft bike-week version.
+
+    The overall database is "citibike". This overall frame contains two document collections.
+
+    The first is "citibike-trips", which stores the actual CitiBike trip information---the GeoJSON blobs---which are
+    used to serve the visualization and which are the ultimate reason that we need to implement a datastore in the
+    first place.
+
+    The second is "citibike-keys", which stores the unique ids of trips which have already been processed and are
+    already present in "citibike-trips". This set is necessary because practical use of the geocoder under
+    rate-limited conditions requires that I know exactly which trips I have run through it already, and which ones I
+    have not. These keys are also present as part of the "citibike-trips" schema, but are replicated here anyway.
+    Why? Because naively inspecting "citibike-trips" would require downloading the entire blob, which might be a
+    gigabyte or more in size. You could instead run a map reduce job, but that's also hard. Good prior planning and
+    embedding this data in the schema in the first place is the answer!
     """
 
-    def __init__(self, credentials_file=None, uri=None,
-                 database='citibike', collection='bike-weeks'):
+    def __init__(self, credentials_file=None, uri=None):
         """
         Initializes a connection to an mLab MongoDB client.
         """
         if uri:
             self.client = MongoClient(uri)
-            self.db = self.client[database][collection]
+            self.db = self.client['citibike']
         elif credentials_file:
             with open(credentials_file) as cred:
                 uri = json.load(cred)['uri']
                 self.client = MongoClient(uri)
-                self.db = self.client[database][collection]
+                self.db = self.client['citibike']
         else:
             raise TypeError("No MongoDB connection credentials schema provided.")
 
@@ -386,3 +414,11 @@ class DataStore:
         # safely delete it.
         del sample['_id']
         return sample
+
+    def get_all_ids(self):
+        """
+        Returns all of the keys stored in the "citibike-keys" store.
+        """
+        keystore = self.db.find({}).next()
+        
+        pass

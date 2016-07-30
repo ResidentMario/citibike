@@ -17,8 +17,7 @@ def main():
     uri = input("Enter a valid MongoDB connection URI: ")
     db = citibike_trips.DataStore(uri=uri)
     n = input("How many trips do you want to geocode (daily API limit is 2500): ")
-    all_data = pd.read_csv("../data/part_2/citibike_trips_on_june_22_2016.csv")
-    all_data_hashes = all_data.apply(lambda srs: hash(srs["starttime"] + srs["bikeid"]), index='columns')
+    all_data = pd.read_csv("../data/final/all_june_22_citibike_trips.csv")
     keys_already_stored = None  # TODO: Continue implementation.
     # STOP: This would take too long.
 

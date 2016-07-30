@@ -156,7 +156,6 @@ class BikeTrip:
         for p in ['starttime', 'stoptime']:
             if isinstance(props[p], str):
                 props[p] = props[p].strftime("%Y-%d-%m %H:%M:%S")
-        props['tripid'] = hash(props['starttime'] + props['bikeid'])  # poor man's unique id.
         self.data = geojson.Feature(geometry=geojson.LineString(path, properties=props))
 
     @staticmethod
@@ -260,7 +259,6 @@ class RebalancingTrip:
                 "starttime": rebalancing_start_time.strftime("%Y-%d-%m %H:%M:%S"),
                 "stoptime": rebalancing_end_time.strftime("%Y-%d-%m %H:%M:%S"),
             }
-            attributes['tripid'] = hash(attributes["starttime"] + attributes["bikeid"])  # poor man's unique key
             self.data = geojson.Feature(geometry=geojson.LineString(coords, properties=attributes))
 
     @staticmethod

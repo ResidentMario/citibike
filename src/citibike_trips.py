@@ -138,7 +138,7 @@ class BikeTrip:
     """
     def __init__(self, raw_trip, client):
         """
-        :param raw_trip: A pandas Series, taken the from the raw CitiBike data, of a bike trip.
+        Initializes.
         """
         path = self.get_bike_trip_path([raw_trip['start station latitude'],
                                         raw_trip['start station longitude']],
@@ -156,6 +156,7 @@ class BikeTrip:
         for p in ['starttime', 'stoptime']:
             if isinstance(props[p], str):
                 props[p] = props[p].strftime("%Y-%d-%m %H:%M:%S")
+        props['tripid'] = hash(props['starttime'] + props['bikeid'])  # poor man's unique id.
         self.data = geojson.Feature(geometry=geojson.LineString(path, properties=props))
 
     @staticmethod
@@ -217,49 +218,50 @@ class RebalancingTrip:
 
         Returns
         -------
-        The list of pd.DataFrame objects corresponding with the aforementioned rebalancing trip deltas.
+        The list of pd.DataFrame objects corresponding with the aforementioned rebalancing trip deltas. Note that if
+        this method finds that the given tripdelta's start and stop stations match, then self.data is initialized to
+        None, e.g. no processing is done.
         """
-        # delta_df['starttime'] = delta_df['starttime'].astype(datetime)
-        # delta_df['stoptime'] = delta_df['stoptime'].astype(datetime)
-        # f = lambda x: datetime.strptime(x, "%Y-%d-%m %H:%M:%S")
-        # delta_df['starttime'] = delta_df['starttime'].map(f)
-        # delta_df['stoptime'] = delta_df['stoptime'].map(f)
         start_point = delta_df.iloc[0]
         end_point = delta_df.iloc[1]
-        for point in [start_point, end_point]:
-            for time in ['starttime', 'stoptime']:
-                if isinstance(point[time], str):
-                    point[time] = pd.to_datetime(point[time], infer_datetime_format=True)
-        start_lat, start_long = start_point[["end station latitude", "end station longitude"]]
-        end_lat, end_long = end_point[["start station latitude", "start station longitude"]]
-        coords, time_estimate_mins = self.get_rebalancing_trip_path_time_estimate_tuple([40.76727216, -73.99392888],
-                                                                                   [40.701907, -74.013942], client)
-        midpoint_time = end_point['starttime'] + ((end_point['starttime'] - start_point['stoptime']) / 2)
-        rebalancing_start_time = midpoint_time - timedelta(minutes=time_estimate_mins / 2)
-        rebalancing_end_time = midpoint_time + timedelta(minutes=time_estimate_mins / 2)
-        if rebalancing_start_time < start_point['stoptime']:
-            rebalancing_start_time = start_point['stoptime']
-        if rebalancing_end_time > end_point['starttime']:
-            rebalancing_end_time = end_point['starttime']
-        # Explicit casts are due to mongodb limitations, see BikeTrip above.
-        attributes = {
-            "tripduration": int(time_estimate_mins * 60),
-            "start station id": int(start_point['end station id']),
-            "end station id": int(end_point['start station id']),
-            "start station name": start_point['end station name'],
-            "end station name": end_point['start station name'],
-            "bikeid": int(start_point["bikeid"]),
-            "usertype": "Rebalancing",
-            "birth year": 0,
-            "gender": 3,
-            "start station latitude": int(start_lat),
-            "start station longitude": int(start_long),
-            "end station latitude": int(end_lat),
-            "end station longitude": int(end_long),
-            "starttime": rebalancing_start_time.strftime("%Y-%d-%m %H:%M:%S"),
-            "stoptime": rebalancing_end_time.strftime("%Y-%d-%m %H:%M:%S")
-        }
-        self.data = geojson.Feature(geometry=geojson.LineString(coords, properties=attributes))
+        if start_point['end station id'] == end_point['start station id']:
+            self.data = None
+        else:
+            for point in [start_point, end_point]:
+                for time in ['starttime', 'stoptime']:
+                    if isinstance(point[time], str):
+                        point[time] = pd.to_datetime(point[time], infer_datetime_format=True)
+            start_lat, start_long = start_point[["end station latitude", "end station longitude"]]
+            end_lat, end_long = end_point[["start station latitude", "start station longitude"]]
+            coords, time_estimate_mins = self.get_rebalancing_trip_path_time_estimate_tuple([40.76727216, -73.99392888],
+                                                                                       [40.701907, -74.013942], client)
+            midpoint_time = end_point['starttime'] + ((end_point['starttime'] - start_point['stoptime']) / 2)
+            rebalancing_start_time = midpoint_time - timedelta(minutes=time_estimate_mins / 2)
+            rebalancing_end_time = midpoint_time + timedelta(minutes=time_estimate_mins / 2)
+            if rebalancing_start_time < start_point['stoptime']:
+                rebalancing_start_time = start_point['stoptime']
+            if rebalancing_end_time > end_point['starttime']:
+                rebalancing_end_time = end_point['starttime']
+            # Explicit casts are due to mongodb limitations, see BikeTrip above.
+            attributes = {
+                "tripduration": int(time_estimate_mins * 60),
+                "start station id": int(start_point['end station id']),
+                "end station id": int(end_point['start station id']),
+                "start station name": start_point['end station name'],
+                "end station name": end_point['start station name'],
+                "bikeid": int(start_point["bikeid"]),
+                "usertype": "Rebalancing",
+                "birth year": 0,
+                "gender": 3,
+                "start station latitude": int(start_lat),
+                "start station longitude": int(start_long),
+                "end station latitude": int(end_lat),
+                "end station longitude": int(end_long),
+                "starttime": rebalancing_start_time.strftime("%Y-%d-%m %H:%M:%S"),
+                "stoptime": rebalancing_end_time.strftime("%Y-%d-%m %H:%M:%S"),
+            }
+            attributes['tripid'] = hash(attributes["starttime"] + attributes["bikeid"])  # poor man's unique key
+            self.data = geojson.Feature(geometry=geojson.LineString(coords, properties=attributes))
 
     @staticmethod
     def get_rebalancing_trip_path_time_estimate_tuple(start, end, client):
@@ -335,46 +337,53 @@ class DataStore:
     repository.
     """
 
-    def __init__(self, credentials_file="../credentials/mlab_instance_api_key.json"):
+    def __init__(self, credentials_file=None, uri=None,
+                 database='citibike', collection='bike-weeks'):
         """
         Initializes a connection to an mLab MongoDB client.
         """
-        with open(credentials_file) as cred:
-            uri = json.load(cred)['uri']
-        self.client = MongoClient(uri)
-        self.bikeweeks = self.client['citibike']['bike-weeks']
+        if uri:
+            self.client = MongoClient(uri)
+            self.db = self.client[database][collection]
+        elif credentials_file:
+            with open(credentials_file) as cred:
+                uri = json.load(cred)['uri']
+                self.client = MongoClient(uri)
+                self.db = self.client[database][collection]
+        else:
+            raise TypeError("No MongoDB connection credentials schema provided.")
 
-    def insert(self, bikeweek):
+    def insert(self, item):
         """
         Insert a single bikeweek into the database. Returns an inspectable result object, with e.g. `acknowledged` and
         `inserted_id` fields.
         """
-        return self.bikeweeks.insert_one(bikeweek)
+        return self.db.insert_one(item)
 
     def delete_all(self):
         """
         Clears the entire database. Only useful for testing. Don't do this actually.
         """
-        self.bikeweeks.delete_many({})
+        self.db.delete_many({})
 
     def delete(self, document_id):
         """
         Deletes a single entry, by document id (as returned by e.g. `result.inserted_id`). only useful for testing.
         """
-        return self.bikeweeks.delete_one({'_id': document_id})
+        return self.db.delete_one({'_id': document_id})
 
     def select_all(self):
         """
         Returns all documents in the data store.
         """
-        return self.bikeweeks.find({})
+        return self.db.find({})
 
-    def sample(self):
+    def sample_bike_week(self):
         """
         Returns a single random bikeweek from storage.
         """
-        r = random.randint(0, self.bikeweeks.count({}) - 1)
-        sample = self.bikeweeks.find({}).limit(1).skip(r).next()
+        r = random.randint(0, self.db.count({}) - 1)
+        sample = self.db.find({}).limit(1).skip(r).next()
         # _id is a BSON parameter which can technically be extended, but since I don't need the object anyway I can
         # safely delete it.
         del sample['_id']

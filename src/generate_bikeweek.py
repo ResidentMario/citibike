@@ -29,7 +29,7 @@ def main():
     feature_list = []
     print("Generating a random bike week...")
     df = select_random_bike_week_from_2015_containing_n_plus_trips(n=25)
-    db = DataStore()
+    db = DataStore(credentials_file="../credentials/mlab_instance_api_key.json")
     bike_df = df.sort_values(by='starttime')
     print("Running through the geocoder...")
     for a_minus_1, a in zip(range(len(bike_df) - 1), range(1, len(bike_df))):
@@ -37,7 +37,7 @@ def main():
         ind_1, ind_2 = delta_df.index.values
         start = delta_df.ix[ind_1]
         # end = delta_df.ix[ind_2]
-        bike_trip = BikeTrip(start).data
+        bike_trip = BikeTrip(start, client).data
         feature_list.append(bike_trip)
         if RebalancingTrip.rebalanced(delta_df):
             rebalancing_trip = RebalancingTrip(delta_df, client).data

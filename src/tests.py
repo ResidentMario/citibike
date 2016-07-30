@@ -85,11 +85,17 @@ class RebalancingTest(unittest.TestCase):
 
 class DataStoreTest(unittest.TestCase):
 
-    def testConnection(self):
+    def setUp(self):
         try:
-            self.db = citibike_trips.DataStore()
+            self.db = citibike_trips.DataStore(uri="mongodb://localhost:27017")  # default URI
         except pymongo.errors.ServerSelectionTimeoutError as err:
             raise err
+
+    def testSomething(self):
+        pass
+
+    def tearDown(self):
+        self.db.close()
 
 
 if __name__ == "__main__":

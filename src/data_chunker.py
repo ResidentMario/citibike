@@ -24,11 +24,11 @@ def main():
     try:
         all_data = pd.read_csv("../data/final/all_june_22_citibike_trips.csv", index_col=0)
         keys_already_stored = db.get_all_trip_ids()
-        # print(keys_already_stored)
         fresh_trip_indices = set(all_data.index).difference(keys_already_stored)
         if len(fresh_trip_indices) == 0:
             print("No more data left to process!")
         else:
+            print("There are {0} trips already in the database.".format(len(keys_already_stored)))
             print("There are {0} trips left to process.".format(len(fresh_trip_indices)))
             ids_to_insert = random.sample(fresh_trip_indices, min(int(n), len(fresh_trip_indices)))
             trips_to_process = all_data.ix[ids_to_insert]

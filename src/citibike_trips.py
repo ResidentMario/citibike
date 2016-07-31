@@ -11,6 +11,7 @@ from polyline.codec import PolylineCodec
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
+import random
 
 
 #####################
@@ -282,7 +283,7 @@ class RebalancingTrip:
                                                                             delta["end station longitude"]], client)
             props = delta.to_dict()
             # Store the id both in the document store...
-            props['tripid'] = delta.name
+            props['tripid'] = int(delta.name)
             # And in the Python object, because we'll need easy access to it in order to pass it to the MongoDB id list.
             self.id = props['tripid']
             self.data = geojson.Feature(geometry=geojson.LineString(coords), properties=props)
@@ -425,6 +426,24 @@ class DataStore:
         """
         self.client['citibike']['citibike-trips'].delete_many({})
         self.client['citibike']['citibike-trip-ids'].delete_many({})
+
+    def get_trip_by_id(self, tripid):
+        """
+        Returns a trip selected by its ID.
+        """
+        ret = self.client['citibike']['citibike-trips'].find_one({"properties.tripid": tripid})
+        del ret['_id']
+        return ret
+
+    def sample(self, n):
+        """
+        Samples n random trips from the data store.
+        """
+        samples = []
+        r_s = random.sample(self.get_all_trip_ids(), n)
+        for r in r_s:
+            samples.append(self.get_trip_by_id(r))
+        return samples
 
     def close(self):
         """

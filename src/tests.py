@@ -63,7 +63,7 @@ class RebalancingTest(unittest.TestCase):
         # Randomly selected rebalanced delta, generated via `sample_trips.head(2)` (note: bikeids do not match)
         self.test_rebalanced_delta = pd.read_csv("../data/part_1/rebalanced_sample.csv")
         # Randomly selected non-rebalanced delta, generated via:
-        # `sample_trips[sample_trips['bikeid'] == 17609].sort_values(by="starttime").head(2)`
+        # >>> sample_trips[sample_trips['bikeid'] == 17609].sort_values(by="starttime").head(2)
         # The bikeid is just a random one.
         self.test_non_rebalanced_delta = pd.read_csv("../data/part_1/non_rebalanced_sample.csv")
 
@@ -78,7 +78,6 @@ class RebalancingTest(unittest.TestCase):
         self.assertTrue(citibike_trips.RebalancingTrip.rebalanced(self.test_non_rebalanced_delta) == False)
 
     def testInitialization(self):
-        # TODO: Mock the API call (see above).
         rebalancing_trip = citibike_trips.RebalancingTrip(self.test_rebalanced_delta, self.client)
         self.assertTrue(len(rebalancing_trip.data['geometry']['coordinates']) > 0)
 

@@ -12,7 +12,7 @@ def main():
     n = int(input("How many trips do you want to sample: "))
     f = input("Where do you want to store this: ")
     try:
-        all_data = pd.read_csv("../data/final/all_june_22_citibike_trips.csv", index_col=0)
+        # all_data = pd.read_csv("../data/final/all_june_22_citibike_trips.csv", index_col=0)
         trips = db.get_all_trip_ids()
         if len(trips) < n:
             raise IOError("There are but {0} trips stored, and you asked for {1} ya knucklehead".format(trips, n))

@@ -270,8 +270,8 @@ class RebalancingTrip:
                 "start station longitude": int(start_long),
                 "end station latitude": int(end_lat),
                 "end station longitude": int(end_long),
-                "starttime": rebalancing_start_time.strftime("%Y-%d-%m %H:%M:%S"),
-                "stoptime": rebalancing_end_time.strftime("%Y-%d-%m %H:%M:%S"),
+                "starttime": rebalancing_start_time.strftime("%m/%d/%Y %H:%M:%S").lstrip('0'),
+                "stoptime": rebalancing_end_time.strftime("%m/%d/%Y %H:%M:%S").lstrip('0'),
                 "tripid": delta.index[0]
             }
             self.data = geojson.Feature(geometry=geojson.LineString(coords, properties=attributes))
@@ -444,6 +444,18 @@ class DataStore:
         for r in r_s:
             samples.append(self.get_trip_by_id(r))
         return samples
+
+    def iter_all(self):
+        """
+        Returns an iterator cursor which lets you do something to every object in the datastore.
+        """
+        return self.client['citibike']['citibike-trips'].find({})
+
+    def replace_trip(self, tripid, new_repr):
+        """
+        Replaces the trip in question with another.
+        """
+        return self.client['citibike']['citibike-trips'].update({'tripid': tripid}, {"$set": new_repr}, upsert=False)
 
     def close(self):
         """

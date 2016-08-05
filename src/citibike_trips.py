@@ -11,6 +11,7 @@ from polyline.codec import PolylineCodec
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
+import pymongo
 import random
 
 
@@ -135,17 +136,13 @@ def select_random_bike_week_from_2015_containing_n_plus_trips(n=25):
 
 class BikeTrip:
     """
-    Class encoding a single bike trip. Wrapper of a GeoJSON FeatureCollection.
+    Class encoding a single bike trip. Wrapper of a GeoJSON FeatureCollection with lazily loaded geometry.
     """
     def __init__(self, raw_trip, client):
         """
         Initializes a BikeTrip. Expects a raw trip from the dataset as input---this should be in the form of a
         pd.Series with a `name` set to be equal to the trip's id in the processed dataset.
         """
-        path = self.get_bike_trip_path([raw_trip['start station latitude'],
-                                        raw_trip['start station longitude']],
-                                       [raw_trip['end station latitude'],
-                                        raw_trip['end station longitude']], client)
         props = raw_trip.to_dict()
         # Because mongodb does not understand numpy data types, in order for this class to be compatible with our
         # data store we have to cast all of the object stored as numpy types back into base Python types. This has to
@@ -159,15 +156,34 @@ class BikeTrip:
         props['tripid'] = int(raw_trip.name)
         # And in the Python object, because we'll need easy access to it in order to pass it to the MongoDB id list.
         self.id = props['tripid']
-        self.data = geojson.Feature(geometry=geojson.LineString(path), properties=props)
+        self.data = geojson.Feature(geometry=geojson.LineString(), properties=props)
+        self.client = client
+
+    def __getitem__(self, item):
+        """
+        Makes accessing properties more convenient.
+
+        Implements lazy loading of geometry data.
+        """
+        if item != 'coordinates':
+            return self.data['properties'][item]
+        else:
+            current_geom = self.data['geometry']['coordinates']
+            if len(current_geom) != 0:
+                return current_geom
+            else:
+                path = self.get_bike_trip_path([self['start station latitude'],
+                                                self['start station longitude']],
+                                               [self['end station latitude'],
+                                                self['end station longitude']], self.client)
+                self.data['geometry']['coordinates'] = path
+                return path
 
     @staticmethod
     def get_bike_trip_path(start, end, client):
         """
         Given a bike trip starting point, a bike trip ending point, and a Google Maps client, returns a list of
         coordinates corresponding with the path that that bike probably took, as reported by Google Maps.
-
-        This low-level but highly compact method is wrapped by far more complex operational methods upstream.
 
         Parameters
         ----------
@@ -196,7 +212,7 @@ class BikeTrip:
 
 class RebalancingTrip:
     """
-    Class encoding a single re-balancing trip. Wrapper of a GeoJSON FeatureCollection.
+    Class encoding a single bike trip. Wrapper of a GeoJSON FeatureCollection. Unlike BikeId, not lazily loaded.
     """
 
     def __init__(self, delta, client):
@@ -266,10 +282,10 @@ class RebalancingTrip:
                 "usertype": "Rebalancing",
                 "birth year": 0,
                 "gender": 3,
-                "start station latitude": int(start_lat),
-                "start station longitude": int(start_long),
-                "end station latitude": int(end_lat),
-                "end station longitude": int(end_long),
+                "start station latitude": float(start_lat),
+                "start station longitude": float(start_long),
+                "end station latitude": float(end_lat),
+                "end station longitude": float(end_long),
                 "starttime": rebalancing_start_time.strftime("%m/%d/%Y %H:%M:%S").lstrip('0'),
                 "stoptime": rebalancing_end_time.strftime("%m/%d/%Y %H:%M:%S").lstrip('0'),
                 "tripid": delta.index[0]
@@ -287,6 +303,15 @@ class RebalancingTrip:
             # And in the Python object, because we'll need easy access to it in order to pass it to the MongoDB id list.
             self.id = props['tripid']
             self.data = geojson.Feature(geometry=geojson.LineString(coords), properties=props)
+
+    def __getitem__(self, item):
+        """
+        Makes accessing properties more convenient.
+        """
+        if item != 'coordinates':
+            return self.data['properties'][item]
+        else:
+            return self.data['geometry']['coordinates']
 
     def to_mongodb(self, datastore):
         datastore.insert_trip(self)
@@ -353,87 +378,108 @@ class RebalancingTrip:
         Returns True if the bike was rebalanced in between the trips, False otherwise.
         """
         ind_1, ind_2 = delta_df.index.values
-        if delta_df.ix[ind_1, 'end station id'] == delta_df.ix[ind_2, 'start station id']:
-            return False
-        else:
-            return True
+        return delta_df.ix[ind_1, 'end station id'] != delta_df.ix[ind_2, 'start station id']
 
 
 class DataStore:
     """
     Class encoding the Citibike data storage layer.
-
-    Note: this class been refactored from the first draft bike-week version.
-
-    The overall database is "citibike". This overall frame contains two document collections.
-
-    The first is "citibike-trips", which stores the actual CitiBike trip information---the GeoJSON blobs---which are
-    used to serve the visualization and which are the ultimate reason that we need to implement a datastore in the
-    first place.
-
-    The second is "citibike-trip-ids", which stores the unique ids of trips which have already been processed and are
-    already present in "citibike-trips". This set is necessary because practical use of the geocoder under
-    rate-limited conditions requires that I know exactly which trips I have run through it already, and which ones I
-    have not. These keys are also present as part of the "citibike-trips" schema, but are replicated here anyway.
-    Why? Because naively inspecting "citibike-trips" would require downloading the entire blob, which might be a
-    gigabyte or more in size. You could instead run a map reduce job, but that's also hard. Good prior planning and
-    embedding this data in the schema in the first place is the answer!
     """
 
+    # INITIALIZATION
     def __init__(self, uri):
         """
         Initializes a connection to a MongoDB database.
         """
         try:
+            # TODO: Raise this for production.
             client = MongoClient(uri, serverSelectionTimeoutMS=1)
             client.server_info()
         except ServerSelectionTimeoutError as err:
             raise err
         self.client = client
+        # If an index on (start station id, end station id) pairs have not already been created, create it.
+        # This operation is idempotent, if the index already exists it does nothing.
+        self.client['citibike']['trip-geometries'].create_index([('start station id', pymongo.ASCENDING),
+                                                                 ('end station id', pymongo.ASCENDING)])
 
-    def get_all_trip_ids(self):
-        """
-        Returns all of the trip ids stored in the "citibike-keys" store.
-        """
-        try:
-            keystore = self.client['citibike']['citibike-trip-ids'].find({'name': 'id-list'}).next()
-            return keystore['id-list']
-        except StopIteration:  # empty database
-            return []
-
+    # INSERTION
     def update_trip_id_list(self, new_ids):
         """
         Updates the list of trip ids stored in the "citibike-keys" store to include the additional ones.
         """
         unique_ids = set(self.get_all_trip_ids()).union(new_ids)
-        # print("All ids:", self.get_all_trip_ids())
-        # print(new_ids, "U:", unique_ids)
         self.client['citibike']['citibike-trip-ids'].update({'name': 'id-list'},
                                                             {'name': 'id-list', 'id-list': list(unique_ids)},
                                                             upsert=True)
 
     def insert_trip(self, trip):
         """
-        Inserts a single trip (either a BikeTrip or a RebalancingTrip) into the database, and stores that trip's id
-        in the index.
+        Inserts a single trip (either a BikeTrip or a RebalancingTrip) into the database.
         """
+        path = self.client['citibike']['trip-geometries'].find_one({
+            'start station id': trip['start station id'],
+            'end station id': trip['end station id']
+        })
+        reverse_path = self.client['citibike']['trip-geometries'].find_one({
+            'start station id': trip['end station id'],
+            'end station id': trip['start station id']
+        })
+        if path:
+            # The geometry has already been stored in the database. Do nothing.
+            pass
+        elif reverse_path:
+            # The geometry has already been stored in the database, just backwards. Do nothing.
+            pass
+        else:
+            # The geometry has not already been stored in the database, so insert it.
+            self.client['citibike']['trip-geometries'].insert_one({
+                'start station id': trip['start station id'],
+                'end station id': trip['end station id'],
+                'coordinates': trip['coordinates']
+            })
         self.client['citibike']['citibike-trips'].insert_one(trip.data)
         self.update_trip_id_list([trip.id])
 
-    def delete_all(self):
-        """
-        Clears the entire database. Only useful for testing. Don't do this actually.
-        """
-        self.client['citibike']['citibike-trips'].delete_many({})
-        self.client['citibike']['citibike-trip-ids'].delete_many({})
-
+    # GETTER
     def get_trip_by_id(self, tripid):
         """
         Returns a trip selected by its ID.
         """
-        ret = self.client['citibike']['citibike-trips'].find_one({"properties.tripid": tripid})
-        del ret['_id']
-        return ret
+        trip = self.client['citibike']['citibike-trips'].find_one({"properties.tripid": tripid})
+        del trip['_id']
+        path = self.client['citibike']['trip-geometries'].find_one({
+            'start station id': trip['start station id'],
+            'end station id': trip['end station id']
+        })
+        if not path:
+            path = self.client['citibike']['trip-geometries'].find_one({
+                'start station id': trip['end station id'],
+                'end station id': trip['start station id']
+            })[::-1]
+        trip['geometry']['coordinates'] = path
+        return trip
+
+    # UTILITY
+    def delete_all(self):
+        """
+        Flushes the entire database down the toilet. Only useful for testing. Don't do this actually.
+        """
+        self.client['citibike']['citibike-trips'].delete_many({})
+        self.client['citibike']['citibike-trip-ids'].delete_many({})
+        self.client['citibike']['citibike-geometries'].delete_many({})
+
+    def get_all_trip_ids(self):
+        """
+        Returns all of the trip ids stored in the "citibike-keys" store.
+
+        Note: this does not associate any geometries with those trips!
+        """
+        try:
+            keystore = self.client['citibike']['citibike-trip-ids'].find({'name': 'id-list'}).next()
+            return keystore['id-list']
+        except StopIteration:  # empty database
+            return []
 
     def sample(self, n):
         """

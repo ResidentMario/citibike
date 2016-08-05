@@ -10,6 +10,7 @@ import citibike_trips
 import googlemaps
 import pandas as pd
 import random
+from tqdm import tqdm
 
 
 def main():
@@ -30,9 +31,10 @@ def main():
         else:
             print("There are {0} trips already in the database.".format(len(keys_already_stored)))
             print("There are {0} trips left to process.".format(len(fresh_trip_indices)))
+            print("Running job...")
             ids_to_insert = random.sample(fresh_trip_indices, min(int(n), len(fresh_trip_indices)))
             trips_to_process = all_data.ix[ids_to_insert]
-            for trip_id, trip in trips_to_process.iterrows():
+            for trip_id, trip in tqdm(trips_to_process.iterrows()):
                 trip.name = trip_id
                 if trip['usertype'] == 'Rebalancing':
                     citibike_trips.RebalancingTrip(trip, client).to_mongodb(db)
@@ -40,6 +42,7 @@ def main():
                     citibike_trips.BikeTrip(trip, client).to_mongodb(db)
     finally:
         db.close()
+        print("Done.")
 
 
 if __name__ == '__main__':

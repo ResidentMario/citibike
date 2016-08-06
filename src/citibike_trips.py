@@ -432,12 +432,15 @@ class DataStore:
             # The geometry has already been stored in the database, just backwards. Do nothing.
             pass
         else:
-            # The geometry has not already been stored in the database, so insert it.
-            self.client['citibike']['trip-geometries'].insert_one({
-                'start station id': trip['start station id'],
-                'end station id': trip['end station id'],
-                'coordinates': trip['coordinates']
-            })
+            # The geometry has not already been stored in the database, so insert it (if it's a BikeTrip!).
+            if isinstance(trip, BikeTrip):
+                self.client['citibike']['trip-geometries'].insert_one({
+                    'start station id': trip['start station id'],
+                    'end station id': trip['end station id'],
+                    'coordinates': trip['coordinates']
+                })
+            else:  # I don't cache rebalancing trip geometry; that's stored inline.
+                pass
         self.client['citibike']['citibike-trips'].insert_one(trip.data)
         self.update_trip_id_list([trip.id])
 

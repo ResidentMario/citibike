@@ -1,5 +1,9 @@
 """
+OBSOLETE
+
 Builds a sampler of complete bike-week paths based on the list of bike-weeks stored in the data store.
+
+Following a project pivot, no longer works.
 """
 
 from src.citibike_trips import DataStore

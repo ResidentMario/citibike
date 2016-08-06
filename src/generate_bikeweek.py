@@ -1,4 +1,6 @@
 """
+OBSOLETE
+
 Generates a single sample bike-week and stores it in the database.
 """
 import geojson

@@ -1,4 +1,6 @@
 """
+OBSOLETE
+
 I made a boneheaded datetime string encoding error, and then wrote several thousand trips to the database while that
 error was live. So I now need to write a script (this one) which goes back through all of those entries and corrects
 all of their dates to the right format.

@@ -445,20 +445,42 @@ class DataStore:
     def get_trip_by_id(self, tripid):
         """
         Returns a trip selected by its ID.
+
+        If the trip is missing this method returns None.
         """
         trip = self.client['citibike']['citibike-trips'].find_one({"properties.tripid": tripid})
-        del trip['_id']
-        path = self.client['citibike']['trip-geometries'].find_one({
-            'start station id': trip['start station id'],
-            'end station id': trip['end station id']
-        })
-        if not path:
+        if trip:
+            del trip['_id']
             path = self.client['citibike']['trip-geometries'].find_one({
-                'start station id': trip['end station id'],
-                'end station id': trip['start station id']
-            })[::-1]
-        trip['geometry']['coordinates'] = path
-        return trip
+                'start station id': trip['properties']['start station id'],
+                'end station id': trip['properties']['end station id']
+            })
+            if path:
+                coordinates = path['coordinates']
+            else:
+                path = self.client['citibike']['trip-geometries'].find_one({
+                    'start station id': trip['properties']['end station id'],
+                    'end station id': trip['properties']['start station id']
+                })
+                coordinates = path['coordinates'][::-1]
+            trip['geometry']['coordinates'] = coordinates
+            return trip
+        else:
+            return None
+
+    def get_station_bikeset(self, station_id, mode):
+        """
+        This is it, folks---this is the core method which gets called when the front-end requests a station bikeset
+        off of an id. Everything else that's been implemented here is in support of this ultimate end goal.
+        """
+        tripset = self.client['citibike']['station-indices'].find_one({'station id': station_id})['tripsets'][mode]
+        # trips = self.client['citibike']['citibike-trips'].find({'properties.tripid': {"$in": tripset}})
+        # for trip in trips:
+        #     print(trip)
+        ret = []
+        for trip_id in tripset:
+            ret.append(self.get_trip_by_id(trip_id))
+        return ret
 
     # UTILITY
     def delete_all(self):

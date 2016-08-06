@@ -1,3 +1,9 @@
+"""
+OBSOLETE
+
+Uses the pre pathing-factor-out data in the data store to pre-populate the paths for the post- (current) version.
+"""
+
 import citibike_trips
 from tqdm import tqdm
 

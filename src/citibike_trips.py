@@ -454,20 +454,23 @@ class DataStore:
         trip = self.client['citibike']['citibike-trips'].find_one({"properties.tripid": tripid})
         if trip:
             del trip['_id']
-            path = self.client['citibike']['trip-geometries'].find_one({
-                'start station id': trip['properties']['start station id'],
-                'end station id': trip['properties']['end station id']
-            })
-            if path:
-                coordinates = path['coordinates']
+            if trip['properties']['type'] == "Rebalancing":
+                return trip
             else:
                 path = self.client['citibike']['trip-geometries'].find_one({
-                    'start station id': trip['properties']['end station id'],
-                    'end station id': trip['properties']['start station id']
+                    'start station id': trip['properties']['start station id'],
+                    'end station id': trip['properties']['end station id']
                 })
-                coordinates = path['coordinates'][::-1]
-            trip['geometry']['coordinates'] = coordinates
-            return trip
+                if path:
+                    coordinates = path['coordinates']
+                else:
+                    path = self.client['citibike']['trip-geometries'].find_one({
+                        'start station id': trip['properties']['end station id'],
+                        'end station id': trip['properties']['start station id']
+                    })
+                    coordinates = path['coordinates'][::-1]
+                trip['geometry']['coordinates'] = coordinates
+                return trip
         else:
             return None
 

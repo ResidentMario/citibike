@@ -454,7 +454,7 @@ class DataStore:
         trip = self.client['citibike']['citibike-trips'].find_one({"properties.tripid": tripid})
         if trip:
             del trip['_id']
-            if trip['properties']['type'] == "Rebalancing":
+            if trip['properties']['usertype'] == "Rebalancing":
                 return trip
             else:
                 path = self.client['citibike']['trip-geometries'].find_one({

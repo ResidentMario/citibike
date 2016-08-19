@@ -36,10 +36,16 @@ def main():
             trips_to_process = all_data.ix[ids_to_insert]
             for trip_id, trip in tqdm(trips_to_process.iterrows()):
                 trip.name = trip_id
-                if trip['usertype'] == 'Rebalancing':
-                    citibike_trips.RebalancingTrip(trip, client).to_mongodb(db)
-                else:
-                    citibike_trips.BikeTrip(trip, client).to_mongodb(db)
+                try:
+                    if trip['usertype'] == 'Rebalancing':
+                        citibike_trips.RebalancingTrip(trip, client).to_mongodb(db)
+                    else:
+                        citibike_trips.BikeTrip(trip, client).to_mongodb(db)
+                # Sometimes a trip with impossible coordinates is passed---e.g. it appears that a few CitiBikes
+                # take a ferry ride between Governer's Island and mainland Manhattan. For these cases we bake in an
+                # exception clause.
+                except:
+                    pass
     finally:
         db.close()
         print("Done.")

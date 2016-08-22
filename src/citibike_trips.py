@@ -264,7 +264,7 @@ class RebalancingTrip:
             end_lat, end_long = end_point[["start station latitude", "start station longitude"]]
             coords, time_estimate_mins = self.get_rebalancing_trip_path_time_estimate_tuple([start_lat, start_long],
                                                                                             [end_lat, end_long], client)
-            midpoint_time = end_point['starttime'] + ((end_point['starttime'] - start_point['stoptime']) / 2)
+            midpoint_time = start_point['stoptime'] + ((end_point['starttime'] - start_point['stoptime']) / 2)
             rebalancing_start_time = midpoint_time - timedelta(minutes=time_estimate_mins / 2)
             rebalancing_end_time = midpoint_time + timedelta(minutes=time_estimate_mins / 2)
             if rebalancing_start_time < start_point['stoptime']:

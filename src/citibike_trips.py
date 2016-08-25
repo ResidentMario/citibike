@@ -392,8 +392,7 @@ class DataStore:
         Initializes a connection to a MongoDB database.
         """
         try:
-            # TODO: Raise this for production.
-            client = MongoClient(uri, serverSelectionTimeoutMS=1)
+            client = MongoClient(uri)
             client.server_info()
         except ServerSelectionTimeoutError as err:
             raise err

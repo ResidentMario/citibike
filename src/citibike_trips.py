@@ -489,7 +489,6 @@ class DataStore:
         # subtlety that if multiple trips in the requested $or set have the same geometry, it will only be returned
         # once, which means that we can't expect the indices returned by our request to match the indices of our
         # geometry series! Instead we match them by key.
-        print(database_geometry_start_ends)
         for trip in regular_trips:
             start_end = (trip['properties']['start station id'], trip['properties']['end station id'])
             try:

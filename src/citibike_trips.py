@@ -443,7 +443,79 @@ class DataStore:
         self.client['citibike']['citibike-trips'].insert_one(trip.data)
         self.update_trip_id_list([trip.id])
 
-    # GETTER
+    # GETTERS
+    def get_trips_by_ids(self, tripset):
+        """
+        Returns a list of trips selected by ID.
+
+        If the trip is missing this method returns None for that trip.
+        """
+        # First find all trips which are in our id list.
+        trips = list(self.client['citibike']['citibike-trips'].find({'properties.tripid': {"$in": tripset}}))
+        # Create a geoms list, which will store a list of requested geometries. The reason for this variable is that
+        # requesting these geometries one at a time, as would be necessary otherwise, is inefficient; it is better if
+        # we can request them all at once. Some additional folds to keep in mind here:
+        # (1) Rebalancing trips, which occur on vans, not on bicycles, store their geometry inline with their
+        #     definition. (in retrospect this was probably a mistake to do, but whatever)
+        # (2) If the database does not have the geometry for the start-station-->end-station orientation of the trip,
+        #     there is an approximately-equal chance that it instead has the end-station-->start-station orientation
+        #     stored. Thus we need to associate data twice, once for each direction.
+        # (3) This code should work with partial data, e.g. while a data storage layer is being built.
+        # Split into rebalancing trips which don't need addressing and regular ones which do.
+        rebalancing_trips = [trip for trip in trips if trip['properties']['usertype'] == 'Rebalancing']
+        regular_trips = [trip for trip in trips if trip['properties']['usertype'] != 'Rebalancing']
+        # Create a list of valid geometries that we want.
+        requested_geometries = [[trip['properties']['start station id'],
+                                 trip['properties']['end station id']] for trip in regular_trips]
+        requested_geometries_backwards = [geom[::-1] for geom in requested_geometries]
+        # At this point we have a list of station geometries that we want of the form [[station_A, station_B], [..]].
+        # Next we build the conditional logical string that we throw at MongoDB to generate our geometry list. This
+        # needs to be a pairwise request which asks that both of the properties that we want are equal to what we
+        # want them to be. Here's an example pymongo snippet for something like this that you can plug into IPython
+        # and run:
+        # >>> import json
+        # >>> from pymongo import MongoClient
+        # >>> mongo_uri = json.load(open("../credentials/mlab_instance_api_key.json"))['uri']
+        # >>> client = MongoClient(mongo_uri)
+        # >>> len(list(client['citibike']['trip-geometries'].find({'$or':
+        # >>>       [{'start station id': 3078, 'end station id': 3100},
+        # >>>        {'start station id': 410, 'end station id': 3148}]})))
+        pymongo_request_string = {'$or': [{'start station id': sid, 'end station id': eid} for sid, eid in
+                                          requested_geometries + requested_geometries_backwards]}
+        database_geometries = list(self.client['citibike']['trip-geometries'].find(pymongo_request_string))
+        database_geometry_start_ends = [(geom['start station id'], geom['end station id']) for geom in
+                                        database_geometries]
+        # Now we plug the geometries we got back into our triplist. Note that we must take into account the important
+        # subtlety that if multiple trips in the requested $or set have the same geometry, it will only be returned
+        # once, which means that we can't expect the indices returned by our request to match the indices of our
+        # geometry series! Instead we match them by key.
+        print(database_geometry_start_ends)
+        for trip in regular_trips:
+            start_end = (trip['properties']['start station id'], trip['properties']['end station id'])
+            try:
+                trip['geometry']['coordinates'] = database_geometries[database_geometry_start_ends.index(start_end)][
+                    'coordinates']
+            except ValueError:
+                try:
+                    trip['geometry']['coordinates'] = database_geometries[database_geometry_start_ends.index(
+                        start_end[::-1])]['coordinates'][::-1]
+                except ValueError:
+                    pass
+                    # raise  # This is OK if the database is full, but not OK if it isn't.
+        trips = rebalancing_trips + regular_trips
+        for trip in trips:
+            del trip['_id']
+        return trips
+        # Speedup relative to using `get_trip_by_id`: get_trip_by_id() returns ~25 trips/second, with a ~2 minute (!)
+        # wait time for the 3376 trips returned by Penn Station Valet (timing according to the Firefox web console,
+        # so it includes packaging and downloading the request). Using this method instead I found:
+        # >>> %timeit list(db.get_trips_by_ids(np.random.choice(data.index.values, size=1000).tolist()))
+        #     1 loop, best of 3: 1.95 s per loop
+        # >>> %timeit list(db.get_trips_by_ids(np.random.choice(data.index.values, size=10000).tolist()))
+        #     1 loop, best of 3: 24.4 s per loop
+        #
+        # This translates to ~8 seconds for the example of Penn Station Valet.
+
     def get_trip_by_id(self, tripid):
         """
         Returns a trip selected by its ID.
@@ -478,14 +550,8 @@ class DataStore:
         This is it, folks---this is the core method which gets called when the front-end requests a station bikeset
         off of an id. Everything else that's been implemented here is in support of this ultimate end goal.
         """
-        tripset = self.client['citibike']['station-indices'].find_one({'station id': station_id})['tripsets'][mode]
-        # trips = self.client['citibike']['citibike-trips'].find({'properties.tripid': {"$in": tripset}})
-        # for trip in trips:
-        #     print(trip)
-        ret = []
-        for trip_id in tripset:
-            ret.append(self.get_trip_by_id(trip_id))
-        return ret
+        tripset = self.client['citibike']['station-indices'].find_one({'station id': str(station_id)})['tripsets'][mode]
+        return self.get_trips_by_ids(tripset)
 
     # UTILITY
     def delete_all(self):
